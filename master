@@ -1,0 +1,99 @@
+#include <DallasTemperature.h>
+#include <OneWire.h>
+#include <Bridge.h>
+#include <Console.h>
+#include <Process.h>
+#include "DHT.h"
+#define DHTPIN 3
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+const unsigned long TimeDelay = 20000;
+unsigned long nextLogTime;
+unsigned long nextSpeak;
+float temp;
+float humd;
+float water;
+
+#define ARRAY_SIZE           3
+#define ONE_WIRE_BUS 7
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+  Serial.begin(9600);
+  Bridge.begin();
+  Console.begin();
+
+  pinMode(2, OUTPUT);
+  pinMode(4, OUTPUT);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+  pinMode(13, OUTPUT);
+  digitalWrite(2, HIGH);
+  digitalWrite(4, LOW);
+  digitalWrite(5, HIGH);
+  digitalWrite(6, LOW);
+  sensors.begin();
+  dht.begin();
+
+  nextSpeak += TimeDelay;
+  humd = dht.readHumidity();
+  temp = dht.readTemperature(true);
+  if (isnan(humd) || isnan(temp)) {
+    humd = (00.00);
+    temp = (00.00);
+  }
+  delay (2000);
+  sensors.requestTemperatures();
+  water = (sensors.getTempCByIndex(0));
+  water = water * 1.8 + 32;
+  if (water < -170.00 || water > 170.00) {
+    water = (00.00);
+  }
+  delay (2000);
+};
+
+void postToThingSpeak(String key, float value[]) {
+  digitalWrite(13, HIGH);
+  Process p;
+  String cmd = "curl --data \"key=" + key;
+  for (int i = 0; i < ARRAY_SIZE; i++) {
+    cmd = cmd + "&field" + (i + 1) + "=" + value[i];
+  }
+  cmd = cmd + "\" http://api.thingspeak.com/update";
+  p.runShellCommand(cmd);
+  Console.println(cmd);
+  p.close();
+  digitalWrite(13, LOW);
+}
+
+void logToSpeak() {
+  sensors.requestTemperatures();
+  water = (sensors.getTempCByIndex(0));
+  water = water * 1.8 + 32;
+  if (water < -170.00 || water > 170.00) {
+    water = (00.00);
+  }
+  humd = dht.readHumidity();
+  temp = dht.readTemperature(true);
+  if (isnan(humd) || isnan(temp)) {
+    humd = (00.00);
+    temp = (00.00);
+  }
+  float vol[ARRAY_SIZE];
+  vol[0] = temp;
+  vol[1] = humd;
+  vol[2] = water;
+  postToThingSpeak("EGFJ8B52DPT7SQN6", vol);
+}
+
+
+void loop() {
+
+  if (nextSpeak <= millis()) {
+    logToSpeak();
+    nextSpeak += TimeDelay;
+  }
+
+}
